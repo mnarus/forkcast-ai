@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class MealFeedbackConfig(AppConfig):
-    name = 'meal_feedback'
+    name = 'apps.meal_feedback'

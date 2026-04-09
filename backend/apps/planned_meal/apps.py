@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class PlannedMealConfig(AppConfig):
-    name = 'planned_meal'
+    name = 'apps.planned_meal'
