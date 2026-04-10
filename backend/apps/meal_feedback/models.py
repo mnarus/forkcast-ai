@@ -1,7 +1,9 @@
 from django.db import models
+from apps.planned_meal.models import PlannedMeal
+
 
 class MealFeedback(models.Model):
-    planned_meal = models.ForeignKey('planned_meal.PlannedMeal', on_delete=models.CASCADE, related_name="feedback")
+    planned_meal = models.ForeignKey(PlannedMeal, on_delete=models.CASCADE, related_name="feedback")
 
     status = models.CharField(
         max_length=20,

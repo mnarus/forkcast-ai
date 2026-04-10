@@ -1,7 +1,9 @@
 from django.db import models
+from apps.weekly_plan.models import WeeklyPlan
+
 
 class PlannedMeal(models.Model):
-    weekly_plan = models.ForeignKey('weekly_plan.WeeklyPlan', on_delete=models.CASCADE, related_name="meals")
+    weekly_plan = models.ForeignKey(WeeklyPlan, on_delete=models.CASCADE, related_name="meals")
     day_of_week = models.CharField(max_length=10)
 
     name = models.CharField(max_length=255)
