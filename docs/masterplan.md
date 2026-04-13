@@ -1,7 +1,7 @@
 ## masterplan.md
 
 ### 30-second elevator pitch
-- Calm, adaptive meal planner that handles dinner for you
+- Calm, adaptive meal planner that handles dinner planning for you
 - Learns from what you actually cook—not what you say
 - Generates weekly plans + grocery lists automatically
 - Gets better every week, with less effort from you
@@ -9,7 +9,7 @@
 ### Problem & mission
 **Problem:**
 - Meal planning is repetitive, stressful, and unrealistic
-- People over-plan → then skip → then feel guilty
+- People spend a lot of time trying to decide what to cook
 - Existing apps = static, manual, and high-effort
 
 **Mission:**
@@ -20,11 +20,11 @@
 ### Target audience
 **Primary:**
 - Busy professionals (25–45)
-- Couples or small households
+- Families managing weeknight dinners
 - People who want to cook but don’t want to plan
 
 **Secondary:**
-- Families managing weeknight dinners
+- Couples or small households
 - Health-conscious users with routine habits
 
 **Anti-user:**
@@ -40,7 +40,7 @@
 
 ### High-level tech stack
 - Frontend: React Native
-- Backend: Node.js + Express
+- Backend: Django
 - Database: PostgreSQL
 - AI layer: LLM + rules engine
 - Memory: vector + structured hybrid

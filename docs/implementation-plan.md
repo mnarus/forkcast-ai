@@ -5,9 +5,9 @@
 #### Phase 0 — Setup (Day 1–2)
 - Create repo
 - Initialize React Native app
-- Initialize Node.js backend
+- Initialize Django backend
 - Set up PostgreSQL database
-- Create basic API endpoint (/health)
+- Create basic API endpoint (/meal-plan)
 
 #### Phase 1 — Core data (Day 3–5)
 - Create tables:
