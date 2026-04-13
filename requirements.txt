@@ -1,3 +1,4 @@
 django
 openai
 python-dotenv
+psycopg[binary]
