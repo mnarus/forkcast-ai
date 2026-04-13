@@ -28,6 +28,10 @@ This starts a local PostgreSQL server on `localhost:5432` with:
 - username: `forkcast`
 - password: `forkcast`
 
+If PostgreSQL is not running, Django will fail after about 5 seconds
+instead of appearing to hang. You can tune that with `POSTGRES_CONNECT_TIMEOUT`
+in `backend/.env`.
+
 ## 4. Run migrations
 
 From the `backend` directory:

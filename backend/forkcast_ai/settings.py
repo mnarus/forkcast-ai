@@ -100,6 +100,11 @@ else:
             'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'forkcast'),
             'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
             'PORT': os.getenv('POSTGRES_PORT', '5432'),
+            'OPTIONS': {
+                # Fail quickly when PostgreSQL isn't running instead of hanging
+                # on long default client timeouts during commands like migrate.
+                'connect_timeout': int(os.getenv('POSTGRES_CONNECT_TIMEOUT', '5')),
+            },
         }
     }
 
