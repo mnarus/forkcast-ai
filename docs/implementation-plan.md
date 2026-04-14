@@ -4,7 +4,7 @@
 
 #### Phase 0 — Setup (Day 1–2)
 - Create repo
-- Initialize React Native app
+- Initialize React Native app with vite
 - Initialize Django backend
 - Set up PostgreSQL database
 - Create basic API endpoint (/meal-plan)
