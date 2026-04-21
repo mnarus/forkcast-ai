@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path
 
 from apps.meal_feedback.views import log_behavior
-from apps.weekly_plan.views import create_user, fetch_meals, save_plan
+from apps.weekly_plan.views import create_user, fetch_meals, generate_plan, save_plan
 from .views import hello_world
 
 urlpatterns = [
@@ -27,5 +27,6 @@ urlpatterns = [
     path('api/users/', create_user, name='create-user'),
     path('api/meals/', fetch_meals, name='fetch-meals'),
     path('api/plans/', save_plan, name='save-plan'),
+    path('api/plans/generate/', generate_plan, name='generate-plan'),
     path('api/behavior-logs/', log_behavior, name='log-behavior'),
 ]

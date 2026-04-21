@@ -2,11 +2,99 @@ import json
 from datetime import date
 
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.planned_meal.models import Meal, PlannedMeal
 from apps.weekly_plan.models import GroceryList, WeeklyPlan
+from apps.weekly_plan.services.meal_generator import generate_weekly_meal_plan
+
+
+DEFAULT_DINNER_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+
+def _normalize_list(value):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _build_grocery_items(generated_meals):
+    items = []
+    seen_items = set()
+
+    for meal in generated_meals:
+        for ingredient in _normalize_list(meal.get("ingredients")):
+            key = ingredient.lower()
+            if key in seen_items:
+                continue
+            seen_items.add(key)
+            items.append(ingredient)
+
+    return items
+
+
+def _find_or_create_meal(*, name, description, ingredients, prep_time_minutes, difficulty):
+    existing_meal = Meal.objects.filter(name__iexact=name).first()
+    if existing_meal:
+        changed = False
+        if description and existing_meal.description != description:
+            existing_meal.description = description
+            changed = True
+        if ingredients and existing_meal.ingredients != ingredients:
+            existing_meal.ingredients = ingredients
+            changed = True
+        if prep_time_minutes and existing_meal.prep_time_minutes != prep_time_minutes:
+            existing_meal.prep_time_minutes = prep_time_minutes
+            changed = True
+        if difficulty and existing_meal.difficulty != difficulty:
+            existing_meal.difficulty = difficulty
+            changed = True
+        if changed:
+            existing_meal.save()
+        return existing_meal
+
+    return Meal.objects.create(
+        name=name,
+        description=description,
+        ingredients=ingredients,
+        prep_time_minutes=prep_time_minutes,
+        difficulty=difficulty,
+    )
+
+
+def _create_plan_with_generated_meals(*, user, week_start_date, notes, generated_meals):
+    with transaction.atomic():
+        weekly_plan = WeeklyPlan.objects.create(
+            user=user,
+            week_start_date=week_start_date,
+            notes=notes,
+        )
+
+        for generated_meal in generated_meals:
+            meal = _find_or_create_meal(
+                name=generated_meal["meal"],
+                description=generated_meal.get("description", ""),
+                ingredients=generated_meal["ingredients"],
+                prep_time_minutes=generated_meal["time"],
+                difficulty=generated_meal["difficulty"],
+            )
+            PlannedMeal.objects.create(
+                weekly_plan=weekly_plan,
+                meal=meal,
+                day_of_week=generated_meal["day"],
+                notes=generated_meal.get("description", ""),
+            )
+
+        GroceryList.objects.create(
+            weekly_plan=weekly_plan,
+            items=_build_grocery_items(generated_meals),
+        )
+
+    return weekly_plan
 
 
 def serialize_plan(weekly_plan):
@@ -158,6 +246,78 @@ def save_plan(request):
     GroceryList.objects.create(
         weekly_plan=weekly_plan,
         items=grocery_items if isinstance(grocery_items, list) else [],
+    )
+
+    return JsonResponse(serialize_plan(weekly_plan), status=201)
+
+
+@csrf_exempt
+def generate_plan(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    user_id = payload.get("user_id")
+    notes = (payload.get("notes") or "").strip()
+    preferences = _normalize_list(payload.get("preferences"))
+    dislikes = _normalize_list(payload.get("dislikes"))
+    dietary_tags = _normalize_list(payload.get("dietary_tags"))
+    schedule = payload.get("schedule") if isinstance(payload.get("schedule"), (dict, list)) else {}
+    max_prep_time_minutes = payload.get("max_prep_time_minutes", 30)
+    week_start_date = payload.get("week_start_date")
+
+    if not user_id:
+        return JsonResponse({"error": "user_id is required"}, status=400)
+
+    try:
+        max_prep_time_minutes = int(max_prep_time_minutes)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "max_prep_time_minutes must be an integer"}, status=400)
+
+    if max_prep_time_minutes <= 0:
+        return JsonResponse({"error": "max_prep_time_minutes must be greater than 0"}, status=400)
+
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "user not found"}, status=404)
+
+    try:
+        parsed_week_start = date.fromisoformat(week_start_date) if week_start_date else date.today()
+    except ValueError:
+        return JsonResponse({"error": "week_start_date must be YYYY-MM-DD"}, status=400)
+
+    recent_meals = list(
+        PlannedMeal.objects.filter(weekly_plan__user=user, meal__isnull=False)
+        .select_related("meal")
+        .order_by("-weekly_plan__week_start_date", "-id")
+        .values_list("meal__name", flat=True)[:10]
+    )
+
+    try:
+        generated_meals = generate_weekly_meal_plan(
+            preferences=preferences,
+            dislikes=dislikes,
+            dietary_tags=dietary_tags,
+            recent_meals=recent_meals,
+            schedule=schedule or {"days": DEFAULT_DINNER_DAYS},
+            max_prep_time_minutes=max_prep_time_minutes,
+            dinner_count=len(DEFAULT_DINNER_DAYS),
+        )
+    except RuntimeError as exc:
+        return JsonResponse({"error": str(exc)}, status=503)
+    except ValueError as exc:
+        return JsonResponse({"error": f"Unable to generate plan: {exc}"}, status=502)
+
+    weekly_plan = _create_plan_with_generated_meals(
+        user=user,
+        week_start_date=parsed_week_start,
+        notes=notes,
+        generated_meals=generated_meals,
     )
 
     return JsonResponse(serialize_plan(weekly_plan), status=201)
