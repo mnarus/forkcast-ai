@@ -4,10 +4,17 @@ from datetime import date
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.planned_meal.models import Meal, PlannedMeal
 from apps.weekly_plan.models import GroceryList, WeeklyPlan
+from apps.weekly_plan.services.grocery_list import (
+    build_grocery_payload,
+    build_grocery_payload_for_plan,
+    build_grocery_payload_from_generated_meals,
+    normalize_ingredient_list,
+)
 from apps.weekly_plan.services.meal_generator import generate_weekly_meal_plan
 
 
@@ -15,26 +22,14 @@ DEFAULT_DINNER_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
 
 def _normalize_list(value):
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        return [value.strip()]
-    return []
+    return normalize_ingredient_list(value)
 
-
-def _build_grocery_items(generated_meals):
-    items = []
-    seen_items = set()
-
-    for meal in generated_meals:
-        for ingredient in _normalize_list(meal.get("ingredients")):
-            key = ingredient.lower()
-            if key in seen_items:
-                continue
-            seen_items.add(key)
-            items.append(ingredient)
-
-    return items
+def _serialize_grocery_list(weekly_plan):
+    grocery_payload = build_grocery_payload_for_plan(weekly_plan)
+    return {
+        "items": grocery_payload["items"],
+        "grouped_items": grocery_payload["grouped_items"],
+    }
 
 
 def _find_or_create_meal(*, name, description, ingredients, prep_time_minutes, difficulty):
@@ -67,6 +62,8 @@ def _find_or_create_meal(*, name, description, ingredients, prep_time_minutes, d
 
 
 def _create_plan_with_generated_meals(*, user, week_start_date, notes, generated_meals):
+    grocery_payload = build_grocery_payload_from_generated_meals(generated_meals)
+
     with transaction.atomic():
         weekly_plan = WeeklyPlan.objects.create(
             user=user,
@@ -91,13 +88,18 @@ def _create_plan_with_generated_meals(*, user, week_start_date, notes, generated
 
         GroceryList.objects.create(
             weekly_plan=weekly_plan,
-            items=_build_grocery_items(generated_meals),
+            items=grocery_payload["items"],
         )
 
     return weekly_plan
 
 
 def serialize_plan(weekly_plan):
+    grocery_list = _serialize_grocery_list(weekly_plan) if hasattr(weekly_plan, "grocery_list") else {
+        "items": [],
+        "grouped_items": [],
+    }
+
     return {
         "id": weekly_plan.id,
         "user_id": weekly_plan.user_id,
@@ -123,7 +125,8 @@ def serialize_plan(weekly_plan):
             }
             for planned_meal in weekly_plan.meals.select_related("meal").all()
         ],
-        "grocery_list": weekly_plan.grocery_list.items if hasattr(weekly_plan, "grocery_list") else [],
+        "grocery_list": grocery_list["items"],
+        "grocery_list_grouped": grocery_list["grouped_items"],
     }
 
 
@@ -189,7 +192,6 @@ def save_plan(request):
 
     user_id = payload.get("user_id")
     meals_data = payload.get("meals") or []
-    grocery_items = payload.get("grocery_list") or []
     notes = (payload.get("notes") or "").strip()
     week_start_date = payload.get("week_start_date")
 
@@ -213,18 +215,14 @@ def save_plan(request):
     except ValueError:
         return JsonResponse({"error": "week_start_date must be YYYY-MM-DD"}, status=400)
 
-    weekly_plan = WeeklyPlan.objects.create(
-        user=user,
-        week_start_date=parsed_week_start,
-        notes=notes,
-    )
+    selected_meals = []
+    meal_entries = []
 
     for meal_data in meals_data:
         meal_id = meal_data.get("meal_id")
         day_of_week = (meal_data.get("day_of_week") or "").strip()
 
         if not meal_id or not day_of_week:
-            weekly_plan.delete()
             return JsonResponse(
                 {"error": "each meal entry requires meal_id and day_of_week"},
                 status=400,
@@ -233,20 +231,44 @@ def save_plan(request):
         try:
             meal = Meal.objects.get(pk=meal_id)
         except Meal.DoesNotExist:
-            weekly_plan.delete()
             return JsonResponse({"error": f"meal {meal_id} not found"}, status=404)
 
-        PlannedMeal.objects.create(
-            weekly_plan=weekly_plan,
-            meal=meal,
-            day_of_week=day_of_week,
-            notes=(meal_data.get("notes") or "").strip(),
+        selected_meals.append(meal)
+        meal_entries.append(
+            {
+                "meal": meal,
+                "day_of_week": day_of_week,
+                "notes": (meal_data.get("notes") or "").strip(),
+            }
         )
 
-    GroceryList.objects.create(
-        weekly_plan=weekly_plan,
-        items=grocery_items if isinstance(grocery_items, list) else [],
+    grocery_payload = build_grocery_payload(
+        [
+            ingredient
+            for meal in selected_meals
+            for ingredient in normalize_ingredient_list(meal.ingredients)
+        ]
     )
+
+    with transaction.atomic():
+        weekly_plan = WeeklyPlan.objects.create(
+            user=user,
+            week_start_date=parsed_week_start,
+            notes=notes,
+        )
+
+        for meal_entry in meal_entries:
+            PlannedMeal.objects.create(
+                weekly_plan=weekly_plan,
+                meal=meal_entry["meal"],
+                day_of_week=meal_entry["day_of_week"],
+                notes=meal_entry["notes"],
+            )
+
+        GroceryList.objects.create(
+            weekly_plan=weekly_plan,
+            items=grocery_payload["items"],
+        )
 
     return JsonResponse(serialize_plan(weekly_plan), status=201)
 
@@ -321,3 +343,20 @@ def generate_plan(request):
     )
 
     return JsonResponse(serialize_plan(weekly_plan), status=201)
+
+
+def fetch_grocery_list(request, plan_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    weekly_plan = get_object_or_404(WeeklyPlan, pk=plan_id)
+    grocery_list = _serialize_grocery_list(weekly_plan)
+
+    return JsonResponse(
+        {
+            "plan_id": weekly_plan.id,
+            "week_start_date": weekly_plan.week_start_date.isoformat(),
+            "items": grocery_list["items"],
+            "grouped_items": grocery_list["grouped_items"],
+        }
+    )
