@@ -94,6 +94,7 @@ def generate_weekly_meal_plan(
     dislikes,
     dietary_tags,
     recent_meals,
+    feedback_profile,
     schedule,
     *,
     max_prep_time_minutes=30,
@@ -110,6 +111,7 @@ def generate_weekly_meal_plan(
         dislikes=json.dumps(_normalize_list(dislikes)),
         dietary_tags=json.dumps(_normalize_list(dietary_tags)),
         recent_meals=json.dumps(_normalize_list(recent_meals)),
+        feedback_profile=json.dumps(feedback_profile or {}, indent=2),
         schedule=json.dumps(schedule or {}, indent=2),
     )
 

@@ -15,6 +15,7 @@ from apps.weekly_plan.services.grocery_list import (
     build_grocery_payload_from_generated_meals,
     normalize_ingredient_list,
 )
+from apps.weekly_plan.services.feedback import build_feedback_profile
 from apps.weekly_plan.services.meal_generator import generate_weekly_meal_plan
 
 
@@ -341,6 +342,7 @@ def generate_plan(request):
         .order_by("-weekly_plan__week_start_date", "-id")
         .values_list("meal__name", flat=True)[:10]
     )
+    feedback_profile = build_feedback_profile(user)
 
     try:
         generated_meals = generate_weekly_meal_plan(
@@ -348,6 +350,7 @@ def generate_plan(request):
             dislikes=dislikes,
             dietary_tags=dietary_tags,
             recent_meals=recent_meals,
+            feedback_profile=feedback_profile,
             schedule=schedule or {"days": DEFAULT_DINNER_DAYS},
             max_prep_time_minutes=max_prep_time_minutes,
             dinner_count=len(DEFAULT_DINNER_DAYS),
@@ -426,6 +429,7 @@ def swap_planned_meal(request, planned_meal_id):
         .order_by("-weekly_plan__week_start_date", "-id")
         .values_list("meal__name", flat=True)[:10]
     )
+    feedback_profile = build_feedback_profile(weekly_plan.user)
 
     try:
         generated_meals = generate_weekly_meal_plan(
@@ -433,6 +437,7 @@ def swap_planned_meal(request, planned_meal_id):
             dislikes=dislikes,
             dietary_tags=dietary_tags,
             recent_meals=recent_meals,
+            feedback_profile=feedback_profile,
             schedule={"days": [planned_meal.day_of_week], "swap_request": planned_meal.day_of_week},
             max_prep_time_minutes=max_prep_time_minutes,
             dinner_count=1,

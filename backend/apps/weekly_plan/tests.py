@@ -12,6 +12,7 @@ from apps.weekly_plan.services.grocery_list import (
     build_grocery_payload_from_generated_meals,
     build_grocery_payload_from_planned_meals,
 )
+from apps.weekly_plan.services.feedback import build_feedback_profile
 from apps.weekly_plan.views import serialize_plan
 from apps.weekly_plan.services.meal_generator import _validate_generated_meals
 
@@ -182,6 +183,7 @@ class WeeklyPlanApiTests(TestCase):
         mock_generate_weekly_meal_plan.assert_called_once()
         self.assertEqual(mock_generate_weekly_meal_plan.call_args.kwargs["recent_meals"], ["Pesto Pasta"])
         self.assertEqual(mock_generate_weekly_meal_plan.call_args.kwargs["max_prep_time_minutes"], 30)
+        self.assertEqual(mock_generate_weekly_meal_plan.call_args.kwargs["feedback_profile"]["history_count"], 0)
 
     def test_fetch_grocery_list_returns_grouped_items_for_plan(self):
         user = User.objects.create_user(username="planner5", password="pw123456")
@@ -307,6 +309,7 @@ class WeeklyPlanApiTests(TestCase):
         )
         self.assertIn("lime", produce_group["items"])
         self.assertIn("Pasta Primavera", mock_generate_weekly_meal_plan.call_args.kwargs["recent_meals"])
+        self.assertEqual(mock_generate_weekly_meal_plan.call_args.kwargs["feedback_profile"]["history_count"], 0)
 
     @patch("apps.weekly_plan.views.generate_weekly_meal_plan")
     def test_generate_plan_returns_upstream_generation_errors(self, mock_generate_weekly_meal_plan):
@@ -393,6 +396,136 @@ class MealGeneratorValidationTests(TestCase):
                 max_prep_time_minutes=30,
                 dislikes=["mushrooms"],
             )
+
+
+class FeedbackProfileTests(TestCase):
+    def test_build_feedback_profile_applies_skip_and_repeat_penalties(self):
+        user = User.objects.create_user(username="planner9", password="pw123456")
+        week_one = WeeklyPlan.objects.create(user=user, week_start_date="2026-04-06")
+        week_two = WeeklyPlan.objects.create(user=user, week_start_date="2026-04-13")
+
+        tacos = Meal.objects.create(
+            name="Tacos",
+            ingredients=["tortillas", "beef", "lime"],
+            prep_time_minutes=20,
+            difficulty="easy",
+        )
+        salmon = Meal.objects.create(
+            name="Salmon Rice Bowls",
+            ingredients=["salmon", "rice", "cucumber"],
+            prep_time_minutes=25,
+            difficulty="easy",
+        )
+
+        tacos_first = PlannedMeal.objects.create(weekly_plan=week_one, meal=tacos, day_of_week="Monday")
+        tacos_second = PlannedMeal.objects.create(weekly_plan=week_two, meal=tacos, day_of_week="Tuesday")
+        salmon_meal = PlannedMeal.objects.create(weekly_plan=week_two, meal=salmon, day_of_week="Wednesday")
+
+        MealFeedback.objects.create(planned_meal=tacos_first, status="skipped")
+        MealFeedback.objects.create(planned_meal=tacos_second, status="skipped")
+        MealFeedback.objects.create(planned_meal=salmon_meal, status="cooked", liked=True)
+
+        profile = build_feedback_profile(user)
+
+        weighted_meals = {item["meal"]: item["score"] for item in profile["weighted_meals"]}
+        weighted_ingredients = {
+            item["ingredient"]: item["score"] for item in profile["weighted_ingredients"]
+        }
+
+        self.assertEqual(profile["recent_skips"], ["Tacos", "Tacos"])
+        self.assertEqual(profile["recent_repeats"], [{"meal": "Tacos", "count": 2, "penalty": 1}])
+        self.assertEqual(weighted_meals["Tacos"], -7)
+        self.assertEqual(weighted_meals["Salmon Rice Bowls"], 3)
+        self.assertEqual(weighted_ingredients["tortillas"], -6)
+        self.assertEqual(weighted_ingredients["salmon"], 3)
+        self.assertIn("Salmon Rice Bowls", profile["positive_meals"])
+        self.assertIn("Tacos", profile["avoid_meals"])
+
+    @patch("apps.weekly_plan.views.generate_weekly_meal_plan")
+    def test_generate_plan_passes_feedback_profile_with_behavior_weights(self, mock_generate_weekly_meal_plan):
+        user = User.objects.create_user(username="planner10", password="pw123456")
+        previous_plan = WeeklyPlan.objects.create(user=user, week_start_date="2026-04-06")
+        skipped_meal = Meal.objects.create(
+            name="Mushroom Pasta",
+            ingredients=["pasta", "mushrooms"],
+            prep_time_minutes=20,
+            difficulty="easy",
+        )
+        cooked_meal = Meal.objects.create(
+            name="Lemon Chicken",
+            ingredients=["chicken", "lemon"],
+            prep_time_minutes=25,
+            difficulty="easy",
+        )
+        skipped_planned_meal = PlannedMeal.objects.create(
+            weekly_plan=previous_plan,
+            meal=skipped_meal,
+            day_of_week="Monday",
+        )
+        cooked_planned_meal = PlannedMeal.objects.create(
+            weekly_plan=previous_plan,
+            meal=cooked_meal,
+            day_of_week="Tuesday",
+        )
+        MealFeedback.objects.create(planned_meal=skipped_planned_meal, status="skipped")
+        MealFeedback.objects.create(planned_meal=cooked_planned_meal, status="cooked", liked=True)
+
+        mock_generate_weekly_meal_plan.return_value = [
+            {
+                "day": "Monday",
+                "meal": "Sheet Pan Salmon",
+                "description": "Fast salmon with roasted vegetables.",
+                "difficulty": "easy",
+                "time": 25,
+                "ingredients": ["salmon", "broccoli", "lemon"],
+            },
+            {
+                "day": "Tuesday",
+                "meal": "Turkey Taco Bowls",
+                "description": "Ground turkey bowls with rice and salsa.",
+                "difficulty": "easy",
+                "time": 20,
+                "ingredients": ["ground turkey", "rice", "salsa"],
+            },
+            {
+                "day": "Wednesday",
+                "meal": "Chickpea Curry",
+                "description": "Pantry-friendly curry with spinach.",
+                "difficulty": "medium",
+                "time": 30,
+                "ingredients": ["chickpeas", "coconut milk", "spinach"],
+            },
+            {
+                "day": "Thursday",
+                "meal": "Veggie Quesadillas",
+                "description": "Crisp tortillas with peppers and cheese.",
+                "difficulty": "easy",
+                "time": 15,
+                "ingredients": ["tortillas", "bell peppers", "cheese"],
+            },
+            {
+                "day": "Friday",
+                "meal": "Sesame Tofu Noodles",
+                "description": "Quick noodles with tofu and snap peas.",
+                "difficulty": "medium",
+                "time": 25,
+                "ingredients": ["tofu", "noodles", "snap peas"],
+            },
+        ]
+
+        response = self.client.post(
+            "/api/plans/generate/",
+            data=json.dumps({"user_id": user.id, "week_start_date": "2026-04-13"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        feedback_profile = mock_generate_weekly_meal_plan.call_args.kwargs["feedback_profile"]
+        self.assertEqual(feedback_profile["history_count"], 2)
+        self.assertIn("Lemon Chicken", feedback_profile["positive_meals"])
+        self.assertIn("Mushroom Pasta", feedback_profile["avoid_meals"])
+        self.assertIn("chicken", feedback_profile["positive_ingredients"])
+        self.assertIn("mushrooms", feedback_profile["avoid_ingredients"])
 
 
 class GroceryListServiceTests(TestCase):

@@ -24,6 +24,9 @@ Dietary Tags:
 Recent Meals (avoid repeating):
 {recent_meals}
 
+Behavior Feedback Weights:
+{feedback_profile}
+
 Schedule:
 {schedule}
 
@@ -48,6 +51,9 @@ Ensure:
 - Meals are realistic
 - Ingredients match the meal
 - Do not include any disliked ingredients or ingredients that conflict with dietary tags
+- Treat skipped meals, negatively weighted meals, and negatively weighted ingredients as low-priority unless unavoidable
+- Favor positively weighted meals and ingredients when they still satisfy the rest of the constraints
+- Apply a simple repeat penalty: if a meal appears repeatedly in recent history, avoid proposing it again
 - No duplicate meals
 - No duplicate days
 - Keep prep times at or below {max_prep_time_minutes}
