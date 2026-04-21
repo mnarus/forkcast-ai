@@ -6,11 +6,13 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from apps.planned_meal.models import Meal, PlannedMeal
+from apps.meal_feedback.models import MealFeedback
 from apps.weekly_plan.models import GroceryList, WeeklyPlan
 from apps.weekly_plan.services.grocery_list import (
     build_grocery_payload_from_generated_meals,
     build_grocery_payload_from_planned_meals,
 )
+from apps.weekly_plan.views import serialize_plan
 from apps.weekly_plan.services.meal_generator import _validate_generated_meals
 
 
@@ -183,7 +185,7 @@ class WeeklyPlanApiTests(TestCase):
 
     def test_fetch_grocery_list_returns_grouped_items_for_plan(self):
         user = User.objects.create_user(username="planner5", password="pw123456")
-        weekly_plan = WeeklyPlan.objects.create(user=user, week_start_date="2026-04-13")
+        weekly_plan = WeeklyPlan.objects.create(user=user, week_start_date=date(2026, 4, 13))
         salmon = Meal.objects.create(
             name="Sheet Pan Salmon",
             ingredients=["salmon", "broccoli", "lemon"],
@@ -215,6 +217,96 @@ class WeeklyPlanApiTests(TestCase):
         dairy_group = next(group for group in payload["grouped_items"] if group["category"] == "dairy")
         self.assertEqual(produce_group["items"], ["bell peppers", "broccoli", "lemon"])
         self.assertEqual(dairy_group["items"], ["cheese"])
+
+    def test_serialize_plan_includes_latest_feedback_for_each_planned_meal(self):
+        user = User.objects.create_user(username="planner7", password="pw123456")
+        meal = Meal.objects.create(
+            name="Lemon Orzo",
+            ingredients=["orzo", "lemon"],
+            prep_time_minutes=20,
+            difficulty="easy",
+        )
+        weekly_plan = WeeklyPlan.objects.create(user=user, week_start_date=date(2026, 4, 13))
+        planned_meal = PlannedMeal.objects.create(
+            weekly_plan=weekly_plan,
+            meal=meal,
+            day_of_week="Monday",
+        )
+        MealFeedback.objects.create(planned_meal=planned_meal, status="cooked", note="Great")
+        GroceryList.objects.create(weekly_plan=weekly_plan, items=["orzo", "lemon"])
+
+        payload = serialize_plan(weekly_plan)
+
+        self.assertEqual(payload["meals"][0]["latest_feedback"]["status"], "cooked")
+        self.assertEqual(payload["meals"][0]["latest_feedback"]["note"], "Great")
+
+    @patch("apps.weekly_plan.views.generate_weekly_meal_plan")
+    def test_swap_planned_meal_replaces_meal_and_refreshes_grocery_list(self, mock_generate_weekly_meal_plan):
+        user = User.objects.create_user(username="planner8", password="pw123456")
+        weekly_plan = WeeklyPlan.objects.create(user=user, week_start_date="2026-04-13")
+        current_meal = Meal.objects.create(
+            name="Salmon Bowls",
+            ingredients=["salmon", "rice"],
+            prep_time_minutes=20,
+            difficulty="easy",
+        )
+        side_meal = Meal.objects.create(
+            name="Pasta Primavera",
+            ingredients=["pasta", "zucchini"],
+            prep_time_minutes=25,
+            difficulty="easy",
+        )
+        planned_meal = PlannedMeal.objects.create(
+            weekly_plan=weekly_plan,
+            meal=current_meal,
+            day_of_week="Monday",
+        )
+        PlannedMeal.objects.create(
+            weekly_plan=weekly_plan,
+            meal=side_meal,
+            day_of_week="Tuesday",
+        )
+        GroceryList.objects.create(weekly_plan=weekly_plan, items=["placeholder"])
+
+        mock_generate_weekly_meal_plan.return_value = [
+            {
+                "day": "Monday",
+                "meal": "Chickpea Tacos",
+                "description": "Fast pantry tacos.",
+                "difficulty": "easy",
+                "time": 15,
+                "ingredients": ["chickpeas", "tortillas", "lime"],
+            }
+        ]
+
+        response = self.client.post(
+            f"/api/planned-meals/{planned_meal.id}/swap/",
+            data=json.dumps(
+                {
+                    "preferences": ["quick dinners"],
+                    "dislikes": ["mushrooms"],
+                    "dietary_tags": ["vegetarian"],
+                    "max_prep_time_minutes": 20,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        planned_meal.refresh_from_db()
+        self.assertEqual(planned_meal.meal.name, "Chickpea Tacos")
+        self.assertEqual(
+            GroceryList.objects.get(weekly_plan=weekly_plan).items,
+            ["pasta", "zucchini", "chickpeas", "tortillas", "lime"],
+        )
+        self.assertEqual(response.json()["planned_meal"]["meal"]["name"], "Chickpea Tacos")
+        produce_group = next(
+            group
+            for group in response.json()["grocery_list"]["grouped_items"]
+            if group["category"] == "produce"
+        )
+        self.assertIn("lime", produce_group["items"])
+        self.assertIn("Pasta Primavera", mock_generate_weekly_meal_plan.call_args.kwargs["recent_meals"])
 
     @patch("apps.weekly_plan.views.generate_weekly_meal_plan")
     def test_generate_plan_returns_upstream_generation_errors(self, mock_generate_weekly_meal_plan):

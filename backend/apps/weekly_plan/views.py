@@ -24,6 +24,33 @@ DEFAULT_DINNER_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 def _normalize_list(value):
     return normalize_ingredient_list(value)
 
+
+def _serialize_meal(meal):
+    if not meal:
+        return None
+
+    return {
+        "id": meal.id,
+        "name": meal.name,
+        "description": meal.description,
+        "ingredients": meal.ingredients,
+        "prep_time_minutes": meal.prep_time_minutes,
+        "difficulty": meal.difficulty,
+    }
+
+
+def _serialize_feedback(feedback):
+    if not feedback:
+        return None
+
+    return {
+        "id": feedback.id,
+        "status": feedback.status,
+        "liked": feedback.liked,
+        "note": feedback.note,
+        "created_at": feedback.created_at.isoformat(),
+    }
+
 def _serialize_grocery_list(weekly_plan):
     grocery_payload = build_grocery_payload_for_plan(weekly_plan)
     return {
@@ -94,6 +121,17 @@ def _create_plan_with_generated_meals(*, user, week_start_date, notes, generated
     return weekly_plan
 
 
+def _serialize_planned_meal(planned_meal):
+    latest_feedback = planned_meal.feedback.order_by("-created_at", "-id").first()
+    return {
+        "id": planned_meal.id,
+        "day_of_week": planned_meal.day_of_week,
+        "notes": planned_meal.notes,
+        "meal": _serialize_meal(planned_meal.meal),
+        "latest_feedback": _serialize_feedback(latest_feedback),
+    }
+
+
 def serialize_plan(weekly_plan):
     grocery_list = _serialize_grocery_list(weekly_plan) if hasattr(weekly_plan, "grocery_list") else {
         "items": [],
@@ -106,23 +144,7 @@ def serialize_plan(weekly_plan):
         "week_start_date": weekly_plan.week_start_date.isoformat(),
         "notes": weekly_plan.notes,
         "meals": [
-            {
-                "id": planned_meal.id,
-                "day_of_week": planned_meal.day_of_week,
-                "notes": planned_meal.notes,
-                "meal": (
-                    {
-                        "id": planned_meal.meal.id,
-                        "name": planned_meal.meal.name,
-                        "description": planned_meal.meal.description,
-                        "ingredients": planned_meal.meal.ingredients,
-                        "prep_time_minutes": planned_meal.meal.prep_time_minutes,
-                        "difficulty": planned_meal.meal.difficulty,
-                    }
-                    if planned_meal.meal
-                    else None
-                ),
-            }
+            _serialize_planned_meal(planned_meal)
             for planned_meal in weekly_plan.meals.select_related("meal").all()
         ],
         "grocery_list": grocery_list["items"],
@@ -358,5 +380,98 @@ def fetch_grocery_list(request, plan_id):
             "week_start_date": weekly_plan.week_start_date.isoformat(),
             "items": grocery_list["items"],
             "grouped_items": grocery_list["grouped_items"],
+        }
+    )
+
+
+@csrf_exempt
+def swap_planned_meal(request, planned_meal_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    planned_meal = get_object_or_404(
+        PlannedMeal.objects.select_related("weekly_plan", "meal", "weekly_plan__user"),
+        pk=planned_meal_id,
+    )
+    weekly_plan = planned_meal.weekly_plan
+
+    preferences = _normalize_list(payload.get("preferences"))
+    dislikes = _normalize_list(payload.get("dislikes"))
+    dietary_tags = _normalize_list(payload.get("dietary_tags"))
+    notes = (payload.get("notes") or "").strip()
+    max_prep_time_minutes = payload.get("max_prep_time_minutes", 30)
+
+    try:
+        max_prep_time_minutes = int(max_prep_time_minutes)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "max_prep_time_minutes must be an integer"}, status=400)
+
+    if max_prep_time_minutes <= 0:
+        return JsonResponse({"error": "max_prep_time_minutes must be greater than 0"}, status=400)
+
+    existing_meals = list(
+        weekly_plan.meals.exclude(pk=planned_meal.pk)
+        .exclude(meal__isnull=True)
+        .values_list("meal__name", flat=True)
+    )
+    recent_meals = existing_meals + list(
+        PlannedMeal.objects.filter(weekly_plan__user=weekly_plan.user, meal__isnull=False)
+        .exclude(pk=planned_meal.pk)
+        .select_related("meal")
+        .order_by("-weekly_plan__week_start_date", "-id")
+        .values_list("meal__name", flat=True)[:10]
+    )
+
+    try:
+        generated_meals = generate_weekly_meal_plan(
+            preferences=preferences,
+            dislikes=dislikes,
+            dietary_tags=dietary_tags,
+            recent_meals=recent_meals,
+            schedule={"days": [planned_meal.day_of_week], "swap_request": planned_meal.day_of_week},
+            max_prep_time_minutes=max_prep_time_minutes,
+            dinner_count=1,
+        )
+    except RuntimeError as exc:
+        return JsonResponse({"error": str(exc)}, status=503)
+    except ValueError as exc:
+        return JsonResponse({"error": f"Unable to swap meal: {exc}"}, status=502)
+
+    replacement = generated_meals[0]
+    meal = _find_or_create_meal(
+        name=replacement["meal"],
+        description=replacement.get("description", ""),
+        ingredients=replacement["ingredients"],
+        prep_time_minutes=replacement["time"],
+        difficulty=replacement["difficulty"],
+    )
+
+    with transaction.atomic():
+        planned_meal.meal = meal
+        planned_meal.notes = notes or replacement.get("description", "")
+        planned_meal.save(update_fields=["meal", "notes"])
+
+        grocery_payload = build_grocery_payload_for_plan(weekly_plan)
+        grocery_list, _ = GroceryList.objects.get_or_create(
+            weekly_plan=weekly_plan,
+            defaults={"items": grocery_payload["items"]},
+        )
+        grocery_list.items = grocery_payload["items"]
+        grocery_list.save(update_fields=["items", "updated_at"])
+
+    return JsonResponse(
+        {
+            "planned_meal": _serialize_planned_meal(planned_meal),
+            "grocery_list": {
+                "plan_id": weekly_plan.id,
+                "week_start_date": weekly_plan.week_start_date.isoformat(),
+                "items": grocery_payload["items"],
+                "grouped_items": grocery_payload["grouped_items"],
+            },
         }
     )

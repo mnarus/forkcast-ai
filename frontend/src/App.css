@@ -2,13 +2,13 @@
   min-height: 100vh;
   padding: 40px 24px 56px;
   background:
-    radial-gradient(circle at top left, rgba(255, 194, 102, 0.45), transparent 30%),
-    radial-gradient(circle at top right, rgba(111, 168, 133, 0.2), transparent 25%),
-    linear-gradient(180deg, #fbf5ea 0%, #f1f6ee 52%, #edf0e8 100%);
+    radial-gradient(circle at top left, rgba(242, 163, 101, 0.2), transparent 28%),
+    radial-gradient(circle at right 20%, rgba(79, 124, 130, 0.18), transparent 24%),
+    linear-gradient(180deg, #f8f6f1 0%, #f3f3ee 56%, #eef2f1 100%);
 }
 
 .hero-panel,
-.content-grid {
+.workspace-panel {
   width: min(1180px, 100%);
   margin: 0 auto;
 }
@@ -23,12 +23,15 @@
 
 .hero-copy,
 .planner-card,
-.panel {
-  border: 1px solid rgba(44, 62, 45, 0.1);
+.workspace-panel,
+.stat-card,
+.detail-card,
+.grocery-summary {
+  border: 1px solid rgba(31, 41, 51, 0.08);
   border-radius: 28px;
-  background: rgba(255, 251, 245, 0.82);
-  box-shadow: 0 24px 50px rgba(59, 79, 56, 0.1);
-  backdrop-filter: blur(14px);
+  background: rgba(250, 250, 249, 0.84);
+  box-shadow: 0 24px 50px rgba(31, 41, 51, 0.08);
+  backdrop-filter: blur(18px);
 }
 
 .hero-copy {
@@ -41,25 +44,77 @@
   font-size: 0.75rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: #5d7158;
+  color: #4f7c82;
 }
 
 .hero-copy h1 {
   margin: 0;
   max-width: 12ch;
-  font-size: clamp(2.8rem, 7vw, 5.6rem);
-  line-height: 0.96;
+  font-size: clamp(2.9rem, 7vw, 5.8rem);
+  line-height: 0.95;
+  color: #1f2933;
 }
 
 .hero-text {
   margin-top: 18px;
-  max-width: 38rem;
-  font-size: 1.05rem;
-  color: #40533f;
+  max-width: 40rem;
+  font-size: 1.06rem;
+  color: #42515d;
 }
 
-.planner-card {
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.stat-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(231, 239, 239, 0.75));
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #1f2933;
+}
+
+.stat-label {
+  color: #5c6974;
+}
+
+.planner-card,
+.workspace-panel {
   padding: 24px;
+}
+
+.planner-heading {
+  margin-bottom: 18px;
+}
+
+.panel-heading,
+.workspace-header,
+.screen-heading,
+.meal-topline,
+.grocery-group-header,
+.detail-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.panel-heading h2,
+.workspace-header h2,
+.screen-heading h3,
+.grocery-group h4,
+.detail-section h4 {
+  margin: 0;
 }
 
 .field-grid {
@@ -76,25 +131,37 @@
 .field span {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #2a382b;
+  color: #1f2933;
+}
+
+.field input,
+.field textarea,
+.screen-tab,
+.action-button,
+.meal-card-button {
+  font: inherit;
 }
 
 .field input,
 .field textarea {
   width: 100%;
-  box-sizing: border-box;
   padding: 14px 16px;
-  border: 1px solid rgba(44, 62, 45, 0.12);
+  border: 1px solid rgba(31, 41, 51, 0.1);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #203021;
-  font: inherit;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2933;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .field input:focus,
-.field textarea:focus {
-  outline: 2px solid rgba(206, 126, 39, 0.25);
-  border-color: rgba(206, 126, 39, 0.35);
+.field textarea:focus,
+.screen-tab:focus-visible,
+.action-button:focus-visible,
+.meal-card-button:focus-visible,
+.check-row input:focus-visible {
+  outline: none;
+  border-color: rgba(79, 124, 130, 0.55);
+  box-shadow: 0 0 0 4px rgba(79, 124, 130, 0.12);
 }
 
 .field-notes {
@@ -106,26 +173,37 @@
   min-height: 88px;
 }
 
+.generate-button,
+.action-button,
+.screen-tab {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
 .generate-button {
   width: 100%;
   margin-top: 18px;
   padding: 15px 18px;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, #243f28 0%, #426949 100%);
-  color: #fdf8ef;
-  font: inherit;
+  background: linear-gradient(135deg, #4f7c82 0%, #355c61 100%);
+  color: #f8f6f1;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-.generate-button:hover:enabled {
+.generate-button:hover:enabled,
+.action-button:hover:enabled,
+.screen-tab:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(36, 63, 40, 0.2);
+  box-shadow: 0 12px 24px rgba(31, 41, 51, 0.1);
 }
 
-.generate-button:disabled {
+.generate-button:disabled,
+.action-button:disabled {
   opacity: 0.72;
   cursor: progress;
 }
@@ -133,71 +211,150 @@
 .status-text {
   min-height: 24px;
   margin-top: 12px;
-  color: #586d56;
+  color: #4d6773;
 }
 
-.content-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
+.status-error {
+  color: #9f4e3e;
 }
 
-.panel {
-  padding: 24px;
+.workspace-panel {
+  overflow: hidden;
 }
 
-.panel-heading,
-.meal-topline,
-.grocery-group-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
+.workspace-header {
+  margin-bottom: 20px;
 }
 
 .week-pill,
 .meal-meta,
-.grocery-group-header span {
+.meal-status,
+.helper-copy {
   border-radius: 999px;
-  background: rgba(218, 228, 211, 0.8);
   padding: 7px 12px;
-  color: #38513c;
   font-size: 0.9rem;
 }
 
+.week-pill {
+  background: rgba(79, 124, 130, 0.12);
+  color: #2f5960;
+}
+
+.helper-copy {
+  background: rgba(231, 239, 239, 0.72);
+  color: #48616a;
+}
+
+.screen-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 22px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(231, 239, 239, 0.8);
+}
+
+.screen-tab {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 10px 16px;
+  color: #48616a;
+  cursor: pointer;
+}
+
+.screen-tab.is-active {
+  background: #ffffff;
+  color: #1f2933;
+}
+
+.screen-panel {
+  padding: 6px 0 0;
+}
+
 .meal-list,
-.grocery-groups {
+.grocery-groups,
+.detail-layout {
   display: grid;
   gap: 16px;
-  margin-top: 22px;
+  margin-top: 20px;
+}
+
+.meal-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .meal-card,
 .grocery-group,
 .empty-state {
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(44, 62, 45, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(31, 41, 51, 0.07);
 }
 
 .meal-card {
-  padding: 18px;
+  padding: 16px;
+}
+
+.meal-card.is-selected {
+  border-color: rgba(79, 124, 130, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(79, 124, 130, 0.18);
+}
+
+.meal-card-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .meal-day {
   font-weight: 700;
-  color: #223723;
+  color: #1f2933;
+}
+
+.meal-status,
+.meal-meta {
+  background: rgba(231, 239, 239, 0.84);
+  color: #42626c;
+}
+
+.status-cooked {
+  background: rgba(121, 176, 145, 0.18);
+  color: #2c6a4b;
+}
+
+.status-skipped {
+  background: rgba(242, 163, 101, 0.18);
+  color: #9a5b28;
+}
+
+.status-planned {
+  background: rgba(79, 124, 130, 0.12);
+  color: #355c61;
 }
 
 .meal-card h3,
-.grocery-group h3,
-.panel h2 {
+.detail-card h4 {
   margin: 0;
 }
 
-.meal-card p {
-  margin-top: 10px;
-  color: #4f644d;
+.meal-card p,
+.detail-card p,
+.grocery-summary p {
+  margin: 10px 0 0;
+  color: #53626d;
+}
+
+.meal-meta-row,
+.detail-metas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .ingredient-chips {
@@ -210,42 +367,174 @@
 .chip {
   padding: 7px 10px;
   border-radius: 999px;
-  background: rgba(245, 232, 206, 0.9);
-  color: #704d1e;
+  background: rgba(242, 163, 101, 0.16);
+  color: #8b561f;
   font-size: 0.9rem;
+}
+
+.meal-actions,
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.meal-actions {
+  margin-top: 16px;
+}
+
+.action-button {
+  border: 1px solid rgba(31, 41, 51, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2933;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.action-button.action-primary {
+  background: #1f2933;
+  color: #f8f6f1;
+  border-color: #1f2933;
+}
+
+.detail-layout {
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  align-items: start;
+}
+
+.detail-card,
+.grocery-summary {
+  padding: 20px;
+}
+
+.detail-description {
+  font-size: 1.02rem;
+}
+
+.detail-section + .detail-section {
+  margin-top: 22px;
+}
+
+.detail-list {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: #2e3f49;
+}
+
+.detail-list li + li,
+.grocery-checklist li + li {
+  margin-top: 10px;
+}
+
+.grocery-layout {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.progress-track {
+  height: 10px;
+  margin-top: 14px;
+  border-radius: 999px;
+  background: rgba(231, 239, 239, 1);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4f7c82 0%, #f2a365 100%);
+  transition: width 220ms ease-out;
+}
+
+.grocery-groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grocery-group {
   padding: 18px;
 }
 
-.grocery-group ul {
-  margin: 14px 0 0;
-  padding-left: 20px;
-  color: #334735;
+.grocery-group-header span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 50%;
+  background: rgba(79, 124, 130, 0.12);
+  color: #355c61;
 }
 
-.grocery-group li + li {
-  margin-top: 8px;
+.grocery-checklist {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #2e3f49;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #4f7c82;
+}
+
+.check-row.is-checked span {
+  color: #7b8894;
+  text-decoration: line-through;
 }
 
 .empty-state {
   display: grid;
   place-items: center;
   min-height: 280px;
-  margin-top: 22px;
-  color: #5f735e;
+  color: #5f707b;
   text-align: center;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1024px) {
   .hero-panel,
-  .content-grid,
+  .detail-layout,
+  .meal-list,
+  .grocery-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 20px 16px 40px;
+  }
+
+  .hero-copy,
+  .planner-card,
+  .workspace-panel {
+    padding: 20px;
+  }
+
+  .hero-stats,
   .field-grid {
     grid-template-columns: 1fr;
   }
 
-  .hero-copy {
-    padding: 32px 24px;
+  .panel-heading,
+  .workspace-header,
+  .screen-heading,
+  .meal-topline,
+  .detail-topline,
+  .grocery-group-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .screen-tabs {
+    display: flex;
   }
 }

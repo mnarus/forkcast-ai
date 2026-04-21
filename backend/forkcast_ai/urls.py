@@ -24,6 +24,7 @@ from apps.weekly_plan.views import (
     fetch_meals,
     generate_plan,
     save_plan,
+    swap_planned_meal,
 )
 from .views import hello_world
 
@@ -35,5 +36,6 @@ urlpatterns = [
     path('api/plans/', save_plan, name='save-plan'),
     path('api/plans/generate/', generate_plan, name='generate-plan'),
     path('api/plans/<int:plan_id>/grocery-list/', fetch_grocery_list, name='fetch-grocery-list'),
+    path('api/planned-meals/<int:planned_meal_id>/swap/', swap_planned_meal, name='swap-planned-meal'),
     path('api/behavior-logs/', log_behavior, name='log-behavior'),
 ]
