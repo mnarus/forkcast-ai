@@ -212,6 +212,7 @@
   min-height: 24px;
   margin-top: 12px;
   color: #4d6773;
+  transition: color 180ms ease;
 }
 
 .status-error {
@@ -295,6 +296,12 @@
 
 .meal-card {
   padding: 16px;
+}
+
+.meal-card-skeleton,
+.grocery-group-skeleton,
+.empty-state {
+  overflow: hidden;
 }
 
 .meal-card.is-selected {
@@ -441,6 +448,18 @@
   overflow: hidden;
 }
 
+.progress-track.is-skeleton {
+  margin-top: 18px;
+  background: linear-gradient(
+    90deg,
+    rgba(231, 239, 239, 0.95) 0%,
+    rgba(255, 255, 255, 0.96) 50%,
+    rgba(231, 239, 239, 0.95) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
 .progress-fill {
   height: 100%;
   border-radius: inherit;
@@ -495,8 +514,108 @@
   display: grid;
   place-items: center;
   min-height: 280px;
+  gap: 10px;
+  padding: 32px;
   color: #5f707b;
   text-align: center;
+  background:
+    radial-gradient(circle at top, rgba(242, 163, 101, 0.12), transparent 42%),
+    rgba(255, 255, 255, 0.78);
+}
+
+.empty-state h4,
+.grocery-summary h4 {
+  margin: 0;
+}
+
+.empty-state p {
+  max-width: 28rem;
+  margin: 0;
+}
+
+.empty-state-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(79, 124, 130, 0.1);
+  color: #355c61;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.meal-list-skeleton,
+.grocery-layout-skeleton {
+  pointer-events: none;
+}
+
+.skeleton-line,
+.skeleton-pill,
+.skeleton-chip,
+.skeleton-count {
+  background: linear-gradient(
+    90deg,
+    rgba(231, 239, 239, 0.96) 0%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(231, 239, 239, 0.96) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 999px;
+}
+
+.skeleton-line + .skeleton-line {
+  margin-top: 12px;
+}
+
+.skeleton-line-short {
+  width: 36%;
+}
+
+.skeleton-line-soft {
+  width: 72%;
+}
+
+.skeleton-pill,
+.skeleton-chip {
+  display: inline-block;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.skeleton-pill {
+  width: 88px;
+}
+
+.skeleton-chip {
+  width: 72px;
+}
+
+.skeleton-count {
+  display: inline-block;
+  width: 36px;
+  min-height: 36px;
+  border-radius: 50%;
+}
+
+.grocery-skeleton-list {
+  margin-top: 18px;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
 }
 
 @media (max-width: 1024px) {

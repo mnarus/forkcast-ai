@@ -59,6 +59,8 @@ type SwapResponse = {
   grocery_list: GroceryListResponse
 }
 
+type ActionKind = 'cooked' | 'skipped' | 'swap'
+
 type PlannerForm = {
   preferences: string
   dislikes: string
@@ -108,6 +110,58 @@ function formatStatus(status: PlannedMeal['latest_feedback'] | null) {
   return status.status === 'cooked' ? 'Cooked' : 'Skipped'
 }
 
+function createGroceryListFromPlan(planData: PlanResponse): GroceryListResponse {
+  return {
+    plan_id: planData.id,
+    week_start_date: planData.week_start_date,
+    items: planData.grocery_list,
+    grouped_items: planData.grocery_list_grouped,
+  }
+}
+
+function getActionLabel(actionKind: ActionKind | null) {
+  if (actionKind === 'cooked') {
+    return 'Saving...'
+  }
+
+  if (actionKind === 'skipped') {
+    return 'Skipping...'
+  }
+
+  if (actionKind === 'swap') {
+    return 'Swapping...'
+  }
+
+  return ''
+}
+
+async function readApiResponse<T>(response: Response): Promise<T | { error?: string }> {
+  const contentType = response.headers.get('content-type') || ''
+  const rawBody = await response.text()
+
+  if (!rawBody) {
+    return {}
+  }
+
+  if (contentType.includes('application/json')) {
+    return JSON.parse(rawBody) as T | { error?: string }
+  }
+
+  if (rawBody.trim().startsWith('<!DOCTYPE') || rawBody.trim().startsWith('<html')) {
+    throw new Error(
+      `The API returned HTML instead of JSON (${response.status}). Check that the Django server is running and inspect the backend error output.`,
+    )
+  }
+
+  try {
+    return JSON.parse(rawBody) as T | { error?: string }
+  } catch {
+    throw new Error(
+      `The API returned an unexpected response (${response.status}).`,
+    )
+  }
+}
+
 function App() {
   const [form, setForm] = useState<PlannerForm>(initialForm)
   const [userId, setUserId] = useState<number | null>(null)
@@ -117,8 +171,9 @@ function App() {
   const [selectedMealId, setSelectedMealId] = useState<number | null>(null)
   const [activeScreen, setActiveScreen] = useState<Screen>('weekly')
   const [loading, setLoading] = useState(true)
+  const [groceryLoading, setGroceryLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [actionMealId, setActionMealId] = useState<number | null>(null)
+  const [actionState, setActionState] = useState<{ mealId: number; kind: ActionKind } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Ready to build this week.')
 
@@ -160,7 +215,7 @@ function App() {
           throw new Error(`Unable to create demo user (${response.status})`)
         }
 
-        const data: { id: number } = await response.json()
+        const data = (await readApiResponse<{ id: number }>(response)) as { id: number }
         window.localStorage.setItem(DEMO_USER_KEY, String(data.id))
 
         if (!ignore) {
@@ -214,17 +269,6 @@ function App() {
     setCheckedItems((current) => current.filter((item) => groceryList.items.includes(item)))
   }, [groceryList])
 
-  async function loadGroceryList(planId: number) {
-    const response = await fetch(`/api/plans/${planId}/grocery-list/`)
-
-    if (!response.ok) {
-      throw new Error(`Unable to load grocery list (${response.status})`)
-    }
-
-    const data: GroceryListResponse = await response.json()
-    setGroceryList(data)
-  }
-
   function updatePlannedMeal(nextMeal: PlannedMeal) {
     setPlan((currentPlan) => {
       if (!currentPlan) {
@@ -266,7 +310,7 @@ function App() {
         }),
       })
 
-      const data = (await response.json()) as PlanResponse | { error?: string }
+      const data = await readApiResponse<PlanResponse>(response)
 
       if (!response.ok) {
         throw new Error(
@@ -276,7 +320,7 @@ function App() {
 
       const nextPlan = data as PlanResponse
       setPlan(nextPlan)
-      await loadGroceryList(nextPlan.id)
+      setGroceryList(createGroceryListFromPlan(nextPlan))
       setActiveScreen('weekly')
       setNotice("You're all set for the week.")
     } catch (submitError) {
@@ -291,7 +335,7 @@ function App() {
   }
 
   async function handleBehaviorAction(plannedMeal: PlannedMeal, status: 'cooked' | 'skipped') {
-    setActionMealId(plannedMeal.id)
+    setActionState({ mealId: plannedMeal.id, kind: status })
     setError('')
 
     try {
@@ -304,7 +348,7 @@ function App() {
         }),
       })
 
-      const data = (await response.json()) as BehaviorResponse | { error?: string }
+      const data = await readApiResponse<BehaviorResponse>(response)
 
       if (!response.ok) {
         throw new Error(data && 'error' in data ? data.error || 'Unable to save action' : 'Unable to save action')
@@ -325,12 +369,13 @@ function App() {
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Unable to save action')
     } finally {
-      setActionMealId(null)
+      setActionState(null)
     }
   }
 
   async function handleSwap(plannedMeal: PlannedMeal) {
-    setActionMealId(plannedMeal.id)
+    setActionState({ mealId: plannedMeal.id, kind: 'swap' })
+    setGroceryLoading(true)
     setError('')
 
     try {
@@ -346,7 +391,7 @@ function App() {
         }),
       })
 
-      const data = (await response.json()) as SwapResponse | { error?: string }
+      const data = await readApiResponse<SwapResponse>(response)
 
       if (!response.ok) {
         throw new Error(data && 'error' in data ? data.error || 'Unable to swap meal' : 'Unable to swap meal')
@@ -361,7 +406,8 @@ function App() {
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Unable to swap meal')
     } finally {
-      setActionMealId(null)
+      setGroceryLoading(false)
+      setActionState(null)
     }
   }
 
@@ -376,6 +422,18 @@ function App() {
   const groceryCompletion = groceryList?.items.length
     ? Math.round((checkedItems.length / groceryList.items.length) * 100)
     : 0
+  const hasPlanMeals = Boolean(plan?.meals.length)
+  const hasGroceryItems = Boolean(groceryList?.items.length)
+  const isWorkspaceBusy = loading || submitting
+  const statusMessage = error
+    ? error
+    : submitting
+      ? 'Generating a personalized dinner rhythm for the week...'
+      : groceryLoading
+        ? 'Refreshing the grocery list to match your latest plan...'
+        : loading
+          ? 'Setting up a demo planner profile...'
+          : notice
 
   return (
     <main className="app-shell">
@@ -411,7 +469,7 @@ function App() {
               <p className="section-label">Planner setup</p>
               <h2>Generate this week</h2>
             </div>
-            <span className="week-pill">{loading ? 'Setting up' : 'Demo mode'}</span>
+            <span className="week-pill">{loading ? 'Setting up' : submitting ? 'Generating' : 'Demo mode'}</span>
           </div>
 
           <div className="field-grid">
@@ -482,11 +540,7 @@ function App() {
           </button>
 
           <p className={`status-text ${error ? 'status-error' : ''}`}>
-            {error
-              ? error
-              : loading
-                ? 'Setting up a demo planner profile...'
-                : notice}
+            {statusMessage}
           </p>
         </form>
       </section>
@@ -494,7 +548,7 @@ function App() {
       <section className="workspace-panel">
         <div className="workspace-header">
           <div>
-            <p className="section-label">Phase 4 UI</p>
+            <p className="section-label">Phase 6 polish</p>
             <h2>Weekly plan, meal detail, and grocery list</h2>
           </div>
           {plan ? <span className="week-pill">Week of {plan.week_start_date}</span> : null}
@@ -522,13 +576,33 @@ function App() {
                 <p className="section-label">Weekly plan view</p>
                 <h3>Meals for the week</h3>
               </div>
-              {plan ? <span className="helper-copy">Tap a meal to open detail.</span> : null}
+              {hasPlanMeals ? <span className="helper-copy">Open any meal for context or quick actions.</span> : null}
             </div>
 
-            {plan ? (
+            {isWorkspaceBusy ? (
+              <div className="meal-list meal-list-skeleton" aria-hidden="true">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <article className="meal-card meal-card-skeleton" key={`meal-skeleton-${index}`}>
+                    <div className="skeleton-line skeleton-line-short" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line skeleton-line-soft" />
+                    <div className="meal-meta-row">
+                      <span className="skeleton-pill" />
+                      <span className="skeleton-pill" />
+                    </div>
+                    <div className="ingredient-chips">
+                      <span className="skeleton-chip" />
+                      <span className="skeleton-chip" />
+                      <span className="skeleton-chip" />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : hasPlanMeals ? (
               <div className="meal-list">
-                {plan.meals.map((plannedMeal) => {
-                  const isBusy = actionMealId === plannedMeal.id
+                {plan!.meals.map((plannedMeal) => {
+                  const actionKind = actionState?.mealId === plannedMeal.id ? actionState.kind : null
+                  const isBusy = Boolean(actionKind)
                   const isSelected = selectedMealId === plannedMeal.id
 
                   return (
@@ -578,7 +652,7 @@ function App() {
                           onClick={() => void handleBehaviorAction(plannedMeal, 'cooked')}
                           type="button"
                         >
-                          {isBusy ? 'Saving...' : 'Cook'}
+                          {actionKind === 'cooked' ? getActionLabel(actionKind) : 'Cook'}
                         </button>
                         <button
                           className="action-button"
@@ -586,7 +660,7 @@ function App() {
                           onClick={() => void handleBehaviorAction(plannedMeal, 'skipped')}
                           type="button"
                         >
-                          Skip
+                          {actionKind === 'skipped' ? getActionLabel(actionKind) : 'Skip'}
                         </button>
                         <button
                           className="action-button"
@@ -594,7 +668,7 @@ function App() {
                           onClick={() => void handleSwap(plannedMeal)}
                           type="button"
                         >
-                          Swap
+                          {actionKind === 'swap' ? getActionLabel(actionKind) : 'Swap'}
                         </button>
                       </div>
                     </article>
@@ -603,7 +677,9 @@ function App() {
               </div>
             ) : (
               <div className="empty-state">
-                <p>Your generated dinners will land here.</p>
+                <div className="empty-state-mark">01</div>
+                <h4>Your dinners will settle in here.</h4>
+                <p>Use the planner on the left to generate a calm week of meals with one tap.</p>
               </div>
             )}
           </section>
@@ -662,27 +738,33 @@ function App() {
                     <div className="detail-actions">
                       <button
                         className="action-button action-primary"
-                        disabled={actionMealId === selectedMeal.id}
+                        disabled={actionState?.mealId === selectedMeal.id}
                         onClick={() => void handleBehaviorAction(selectedMeal, 'cooked')}
                         type="button"
                       >
-                        {actionMealId === selectedMeal.id ? 'Saving...' : 'Cook'}
+                        {actionState?.mealId === selectedMeal.id && actionState.kind === 'cooked'
+                          ? getActionLabel(actionState.kind)
+                          : 'Cook'}
                       </button>
                       <button
                         className="action-button"
-                        disabled={actionMealId === selectedMeal.id}
+                        disabled={actionState?.mealId === selectedMeal.id}
                         onClick={() => void handleBehaviorAction(selectedMeal, 'skipped')}
                         type="button"
                       >
-                        Skip
+                        {actionState?.mealId === selectedMeal.id && actionState.kind === 'skipped'
+                          ? getActionLabel(actionState.kind)
+                          : 'Skip'}
                       </button>
                       <button
                         className="action-button"
-                        disabled={actionMealId === selectedMeal.id}
+                        disabled={actionState?.mealId === selectedMeal.id}
                         onClick={() => void handleSwap(selectedMeal)}
                         type="button"
                       >
-                        Swap
+                        {actionState?.mealId === selectedMeal.id && actionState.kind === 'swap'
+                          ? getActionLabel(actionState.kind)
+                          : 'Swap'}
                       </button>
                     </div>
                   </div>
@@ -699,7 +781,9 @@ function App() {
               </div>
             ) : (
               <div className="empty-state">
-                <p>Select a meal from the weekly plan to open its details.</p>
+                <div className="empty-state-mark">02</div>
+                <h4>Meal details appear when you choose a dinner.</h4>
+                <p>Select a meal from the weekly plan to see ingredients, context, and quick actions.</p>
               </div>
             )}
           </section>
@@ -717,7 +801,30 @@ function App() {
               ) : null}
             </div>
 
-            {groceryList ? (
+            {groceryLoading ? (
+              <div className="grocery-layout grocery-layout-skeleton" aria-hidden="true">
+                <article className="grocery-summary">
+                  <div className="skeleton-line skeleton-line-short" />
+                  <div className="progress-track is-skeleton" />
+                  <div className="skeleton-line skeleton-line-soft" />
+                </article>
+                <div className="grocery-groups">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <section className="grocery-group grocery-group-skeleton" key={`grocery-skeleton-${index}`}>
+                      <div className="grocery-group-header">
+                        <div className="skeleton-line skeleton-line-short" />
+                        <span className="skeleton-count" />
+                      </div>
+                      <div className="grocery-skeleton-list">
+                        <div className="skeleton-line skeleton-line-soft" />
+                        <div className="skeleton-line skeleton-line-soft" />
+                        <div className="skeleton-line skeleton-line-soft" />
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            ) : hasGroceryItems ? (
               <div className="grocery-layout">
                 <article className="grocery-summary">
                   <h4>Shopping progress</h4>
@@ -725,12 +832,12 @@ function App() {
                     <div className="progress-fill" style={{ width: `${groceryCompletion}%` }} />
                   </div>
                   <p>
-                    {checkedItems.length} of {groceryList.items.length} items checked off.
+                    {checkedItems.length} of {groceryList!.items.length} items checked off.
                   </p>
                 </article>
 
                 <div className="grocery-groups">
-                  {groceryList.grouped_items.map((group) => (
+                  {groceryList!.grouped_items.map((group) => (
                     <section className="grocery-group" key={group.category}>
                       <div className="grocery-group-header">
                         <h4>{group.label}</h4>
@@ -760,7 +867,9 @@ function App() {
               </div>
             ) : (
               <div className="empty-state">
-                <p>Generate a plan to build your grocery list.</p>
+                <div className="empty-state-mark">03</div>
+                <h4>Your grocery list will build itself.</h4>
+                <p>Once a plan is generated, ingredients are grouped here so the store run feels lighter.</p>
               </div>
             )}
           </section>
